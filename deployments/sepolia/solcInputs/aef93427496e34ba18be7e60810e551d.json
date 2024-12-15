@@ -1,0 +1,39 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n// solhint-disable-next-line interface-starts-with-i\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\n// 导入 dateFeed 合约，转换 ETH\nimport {AggregatorV3Interface} from \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\ncontract FundMe {\n    AggregatorV3Interface public dateFeedsAddr;\n    uint256 LOCK_TIME;\n    uint256 deployBlockTime;\n    mapping (address => uint256) public fundersMapping;\n    uint256 constant MIN_VALUE = 1 * 10 ** 18;\n    address public owner;\n    uint256 constant TARGET = 100 * 10 ** 18;\n    address fundMeTokenAddr;\n    bool public getEthToOwnerSucess=false;\n    \n    //写个事件\n    event getEthtoOwnerEvent(uint256);\n    event getEthToFunderEvent(address,uint256);\n\n    constructor(uint256 _lockTime,address _dateFeedsAddr) {\n        LOCK_TIME = _lockTime;\n        deployBlockTime = block.timestamp;\n        owner = msg.sender;\n        dateFeedsAddr = AggregatorV3Interface(_dateFeedsAddr);\n    }\n\n    // 创建一个收款函数，让参与者在限定时间内募款,且有最小值\n    function fund() public payable {\n        require(block.timestamp < deployBlockTime + LOCK_TIME, \"payable is out of time\");\n        require(EthToUsd(msg.value) >= MIN_VALUE, \"send more ETH\");\n        fundersMapping[msg.sender] += msg.value;\n    }\n\n    // 设定一个目标值，使达到目标且到达规定时间后 权限者能够提款\n    function getEthToOwner() external  onlyOwner {\n        require(block.timestamp > deployBlockTime + LOCK_TIME, \"payable is not on time\");\n        require(EthToUsd(address(this).balance) >= TARGET, \"not fund enough money\");\n        uint256 balanceOf=address(this).balance;\n        bool success;\n        (success, ) = payable(msg.sender).call{value: balanceOf}(\"\");\n        \n        require(success, \"Transfer failed.\");\n        getEthToOwnerSucess=true;\n        emit getEthtoOwnerEvent(balanceOf);\n    }\n\n    // 未到目标，且到达规定时间，参与者自行提款\n    function getEthToFunder() external {\n    require(block.timestamp > deployBlockTime + LOCK_TIME, \"payable is not on time\");\n    require(EthToUsd(address(this).balance) <= TARGET, \"fund enough money on target,pleace wait owner use\");\n    require(fundersMapping[msg.sender] != 0, \"your balance is 0\");\n    \n    uint256 amount = fundersMapping[msg.sender];\n    fundersMapping[msg.sender] = 0;\n    \n    (bool success, ) = payable(msg.sender).call{value: amount}(\"\");\n    require(success, \"Transfer failed.\");\n\n    emit getEthToFunderEvent(msg.sender,fundersMapping[msg.sender]);\n}\n\n\n    // 更换地址拥有权\n    function tranferOwnership(address newOwner) public onlyOwner {\n        owner = newOwner;\n    }\n\n    // eth/美元的实时价格\n    function getChainlinkDataFeedLatestAnswer() public view returns (int) {\n        (\n            , // uint80 roundID\n            int answer,\n            , // uint startedAt\n            , // uint timeStamp\n            // uint80 answeredInRound\n        ) = dateFeedsAddr.latestRoundData();\n        return answer;\n    }\n\n    // 将单位转为美元而不是 wei\n    function EthToUsd(uint256 _amount) internal view returns (uint256) {\n        uint256 EthPrice = uint256(getChainlinkDataFeedLatestAnswer());\n        return _amount * EthPrice / 10 ** 8;\n    }\n\n    //在锻造mint后，fundersMapping需要相对应减少，且只能fundMeToken这个合约才有资格调用\n    function adjustFundersMapping (address funder,uint256 _amount) external{\n      require(msg.sender==fundMeTokenAddr,\"you don't have premisson\");\n      fundersMapping[funder]-=_amount;\n    }\n    \n    function setFundMeTokenAddr(address _fundMeTokenAddr) public onlyOwner{\n        fundMeTokenAddr=_fundMeTokenAddr;\n    }\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"you are not owner\");\n        _;\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "evmVersion": "paris",
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
